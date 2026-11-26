@@ -14,7 +14,7 @@ python main.py
 ### Test with Custom Research Queries
 
 ```bash
-export RESEARCH_QUERY="What are the smartest birds on the planet?"
+export RESEARCH_QUERY="How do mRNA vaccines work?"
 python main.py
 ```
 
@@ -29,3 +29,6 @@ If your implementation is correct, you should see:
 3. LLM output from Gemini
 4. Performance evaluation metrics displayed
 5. A generated `research_report.md` file with comprehensive findings
+
+Observations:
+It took 3 iterations and every iteration came back with needs improvement. needs_improvement (score: 0.50). It ran through 6 stages. No citations were found from APA for this run.

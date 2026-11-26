@@ -238,6 +238,7 @@ def create_research_loop_agent(model: str = "gemini-2.0-flash",
 async def execute_research_loop(
     client: genai.Client,
     query: str,
+    sources: Dict[str, Any] = None,
     max_iterations: int = 3,
     model: str = "gemini-2.0-flash"
 ) -> Dict[str, Any]:
@@ -247,6 +248,7 @@ async def execute_research_loop(
     Args:
         client: Configured genai.Client
         query: Research question
+        sources: Gathered source data from Stage 2
         max_iterations: Maximum loop iterations
         model: Gemini model name
 
@@ -273,6 +275,17 @@ async def execute_research_loop(
     context = []
     iteration_history = []
     final_answer = None
+
+    # If sources are provided, add them to the initial context
+    if sources:
+        source_data = {
+            'raw_searches': sources.get('raw_searches', []),
+            'aggregated_sources': sources.get('aggregated_sources', {})
+        }
+        context.append({
+            'role': 'sources',
+            'content': json.dumps(source_data)
+        })
 
     for iteration in range(1, max_iterations + 1):
         print(f"\n   Iteration {iteration}/{max_iterations}")

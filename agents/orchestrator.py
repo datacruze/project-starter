@@ -93,6 +93,7 @@ async def execute_research_workflow(
     research = await execute_research_loop(
         client=client,
         query=query,
+        sources=sources,
         max_iterations=max_iterations,
         model=model
     )
@@ -195,12 +196,23 @@ async def execute_research_workflow(
     print("STAGE 7: Performance Evaluation")
     print("-"*80)
 
-    # TODO 8: Implement performance evaluation here
-    # Replace the None values below with actual implementation
+    execution_time = time.time() - start_time
+    evaluator = PerformanceEvaluator()
 
-    execution_time = None  # REPLACE: Calculate execution time
-    evaluator = None       # REPLACE: Create PerformanceEvaluator instance
-    performance_summary = None  # REPLACE: Get performance summary after recording metrics
+    final_iteration = research['iteration_history'][-1] if research['iteration_history'] else {}
+    quality_score = final_iteration.get('evaluation', {}).get('quality_score', 0.0)
+
+    evaluator.evaluate_query_result(
+        {
+            'quality_score': quality_score,
+            'sources_found': sources['aggregated_sources'].get('total_sources', 0),
+            'iterations': research['iterations_run'],
+            'fact_checks': 1,
+            'citations_count': citations.get('total_citations', 0)
+        },
+        execution_time
+    )
+    performance_summary = evaluator.analyze_performance()
 
     # This section will work once you complete TODO 8
     if execution_time and evaluator and performance_summary:
