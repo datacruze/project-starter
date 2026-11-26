@@ -61,9 +61,16 @@ Confidence guidelines:
 
 Be precise in classification but acknowledge uncertainty when present."""
 
-        # TODO 5: Initialize LlmAgent for domain classification 
-
-        pass  # REPLACE THIS LINE: Initialize LlmAgent with super().__init__() here
+        super().__init__(
+            name="domain_classifier",
+            model=model,
+            instruction=instruction,
+            generate_content_config=GenerateContentConfig(
+                temperature=0.2,
+                max_output_tokens=400,
+                response_mime_type="application/json"
+            )
+        )
 
 
 class QueryComplexityAgent(LlmAgent):
