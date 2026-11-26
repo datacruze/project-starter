@@ -219,21 +219,18 @@ def create_research_loop_agent(model: str = "gemini-2.0-flash",
     Returns:
         LoopAgent configured for research refinement
     """
-    # TODO 1: Create the two agents for the LoopAgent
-    #
     # Create the generator and validator agents:
-    # - ResearcherAgent: The generator that creates/improves answers
-    # - ResearchCriticAgent: The validator that evaluates quality
+    researcher = ResearcherAgent(model=model)
+    critic = ResearchCriticAgent(model=model)
 
-    researcher = None  # REPLACE: Create ResearcherAgent here
-    critic = None      # REPLACE: Create ResearchCriticAgent here
-
-    # TODO 2: Compose agents into LoopAgent
-    #
-    # Create a LoopAgent that will run the researcher and critic iteratively.
-    #
-
-    refinement_loop = None  # REPLACE: Create LoopAgent here
+    # Compose agents into an ADK LoopAgent. max_iterations is also enforced
+    # explicitly by execute_research_loop() for direct-genai execution.
+    refinement_loop = LoopAgent(
+        name="research_refinement_loop",
+        description="Iteratively generates and critiques research answers until quality is sufficient.",
+        sub_agents=[researcher, critic],
+        max_iterations=max_iterations
+    )
 
     return refinement_loop
 
