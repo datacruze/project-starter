@@ -1,0 +1,22 @@
+Stage 1 excerpts from two separate main.py runs
+RESEARCH_QUERY='What are benefits of taking Vitamin D'
+
+Run 1
+
+--------------------------------------------------------------------------------
+STAGE 1: Domain Classification
+--------------------------------------------------------------------------------
+   ✓ Domain: medicine
+   ✓ Confidence: 0.98
+   ✓ Complexity: low
+   ✓ Recommended sources: pubmed, scholar, cochrane_library, webmd
+
+Run 2
+
+--------------------------------------------------------------------------------
+STAGE 1: Domain Classification
+--------------------------------------------------------------------------------
+   ✓ Domain: medicine
+   ✓ Confidence: 0.98
+   ✓ Complexity: low
+   ✓ Recommended sources: pubmed, scholar, cochrane_library, who
