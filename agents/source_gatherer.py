@@ -1,5 +1,7 @@
 import json
 import asyncio
+import os
+from pathlib import Path
 from typing import Dict, Any, List
 from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
 from google import genai
@@ -41,16 +43,16 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
 
-    def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
+    async def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
         """Execute search using direct genai.Client call (execution)."""
         prompt = f"{self.instruction}\n\nuser: Search query: {query}\n\nGenerate realistic web search results for this query."
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=prompt,
             config=self.generate_content_config
@@ -111,16 +113,16 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
 
-    def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
+    async def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
         """Execute search using direct genai.Client call (execution)."""
         prompt = f"{self.instruction}\n\nuser: Search query: {query}\n\nGenerate realistic arXiv papers for this query."
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=prompt,
             config=self.generate_content_config
@@ -183,16 +185,16 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.8,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
 
-    def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
+    async def search(self, client: genai.Client, query: str) -> Dict[str, Any]:
         """Execute search using direct genai.Client call (execution)."""
         prompt = f"{self.instruction}\n\nuser: Search query: {query}\n\nGenerate realistic Google Scholar results for this query."
 
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model=self.model,
             contents=prompt,
             config=self.generate_content_config
@@ -250,7 +252,7 @@ Output format (JSON):
   "aggregation_summary": "Brief summary of source quality and diversity"
 }
 
-Select the top 10-15 most relevant sources."""
+Select the top 10-15 most relevant sources. Keep their original URLs and any supplied authors, publication dates, and venues."""
 
         # Initialize ADK LlmAgent
         super().__init__(
@@ -259,7 +261,7 @@ Select the top 10-15 most relevant sources."""
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=2048,
+                max_output_tokens=8192,
                 response_mime_type="application/json"
             )
         )
@@ -392,30 +394,47 @@ async def execute_source_gathering(
 
     async def run_web():
         print(f"      → {web_search.name} running...")
-        result = web_search.search(client, query)
+        result = await web_search.search(client, query)
         print(f"      ✓ {web_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
     async def run_arxiv():
         print(f"      → {arxiv_search.name} running...")
-        result = arxiv_search.search(client, query)
+        result = await arxiv_search.search(client, query)
         print(f"      ✓ {arxiv_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
     async def run_scholar():
         print(f"      → {scholar_search.name} running...")
-        result = scholar_search.search(client, query)
+        result = await scholar_search.search(client, query)
         print(f"      ✓ {scholar_search.name}: Found {result.get('total_found', 0)} sources")
         return result
 
-    # Run all searches in parallel (parallel execution with asyncio.gather)
-    search_results = await asyncio.gather(run_web(), run_arxiv(), run_scholar())
+    source_file = os.getenv("RESEARCH_SOURCES_FILE")
+    if source_file:
+        print("      Using supplied source records")
+        records = json.loads(Path(source_file).read_text(encoding="utf-8"))
+        search_results = []
+        for source_type in ("web", "arxiv", "scholar"):
+            results = [record for record in records if record["type"] == source_type]
+            search_results.append({"source_type": source_type, "results": results, "total_found": len(results)})
+    else:
+        search_results = await asyncio.gather(run_web(), run_arxiv(), run_scholar())
 
     # STAGE 2: Aggregate results (fan-in)
     print(f"\n   Stage 2: Aggregator (fan-in)")
     print(f"      → {aggregator.name} aggregating results...")
 
-    aggregated = aggregator.aggregate(client, list(search_results))
+    if source_file:
+        unique = {source["url"]: source for source in records}
+        aggregated = {
+            "total_sources": len(records),
+            "unique_sources": len(unique),
+            "top_sources": list(unique.values()),
+            "sources_by_type": {result["source_type"]: result["total_found"] for result in search_results},
+        }
+    else:
+        aggregated = aggregator.aggregate(client, list(search_results))
 
     print(f"      ✓ Total: {aggregated.get('total_sources', 0)} sources")
     print(f"      ✓ Unique: {aggregated.get('unique_sources', 0)} sources")

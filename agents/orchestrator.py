@@ -314,7 +314,7 @@ def generate_research_report(workflow_results: Dict[str, Any]) -> str:
 ### Source Distribution
 - Web: {sources['aggregated_sources'].get('sources_by_type', {}).get('web', 0)}
 - ArXiv: {sources['aggregated_sources'].get('sources_by_type', {}).get('arxiv', 0)}
-- Google Scholar: {sources['aggregated_sources'].get('sources_by_type', {}).get('scholar', 0)}
+- Academic publications: {sources['aggregated_sources'].get('sources_by_type', {}).get('scholar', 0)}
 
 ---
 

@@ -14,11 +14,9 @@ python main.py
 ### Test with Custom Research Queries
 
 ```bash
-export RESEARCH_QUERY="How do mRNA vaccines work?"
+export RESEARCH_QUERY="What are benefits of taking Vitamin D"
 python main.py
 ```
-
-Or edit the `queries` list in `main.py` to add your own research topics.
 
 ### Expected Output
 
@@ -30,5 +28,6 @@ If your implementation is correct, you should see:
 4. Performance evaluation metrics displayed
 5. A generated `research_report.md` file with comprehensive findings
 
-Observations:
-It took 3 iterations and every iteration came back with needs improvement. needs_improvement (score: 0.50). It ran through 6 stages. No citations were found from APA for this run.
+### Observations
+
+The custom-query run reached the three-iteration limit. Each critic evaluation fell back to `needs_improvement` with a score of `0.50` after a JSON parse error. Citation generation produced three references, all of which are cited in the findings.

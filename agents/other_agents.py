@@ -50,7 +50,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=512,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -216,7 +216,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=2048,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -247,7 +247,11 @@ Key Points: {json.dumps(answer.get('key_points', []))}
 
 Credibility: {fact_check.get('credibility_score', 0.5)}
 
-Top Sources: {len(sources.get('aggregated_sources', {}).get('top_sources', []))} sources available"""
+Sources:
+{json.dumps(sources.get('aggregated_sources', {}).get('top_sources', [])[:10])}
+
+Support the findings with Markdown links to these source URLs. Use these records as
+evidence and only cite a source for claims it supports."""
 
         response = client.models.generate_content(
             model=self.model,
@@ -312,7 +316,7 @@ Output format (JSON):
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.1,
-                max_output_tokens=1536,
+                max_output_tokens=8192,
                 response_mime_type="application/json"
             )
         )
@@ -327,13 +331,17 @@ Output format (JSON):
         Returns:
             Formatted citations
         """
-        top_sources = sources.get('aggregated_sources', {}).get('top_sources', [])
+        top_sources = [
+            source for source in sources.get('aggregated_sources', {}).get('top_sources', [])
+            if source.get('title') and source.get('url')
+        ][:10]
 
         prompt = f"""{self.instruction}
 
-user: Generate citations for these sources:
+user: Generate citations for these sources. Preserve each URL exactly in the
+bibliography and use only the supplied publication metadata.
 
-{json.dumps(top_sources[:10], indent=2)}"""
+{json.dumps(top_sources, indent=2)}"""
 
         response = client.models.generate_content(
             model=self.model,
@@ -342,17 +350,24 @@ user: Generate citations for these sources:
         )
 
         try:
-            result = json.loads(response.text)
+            result = json.loads(response.text or "")
+        except json.JSONDecodeError:
+            result = {}
+        bibliography = result.get('bibliography') or ''
+        if top_sources and all(source['url'] in bibliography for source in top_sources):
             result['_metadata'] = {
                 'agent': self.name,
                 'execution': 'direct_genai_client'
             }
             return result
-        except json.JSONDecodeError:
-            return {
-                'citations': [],
-                'bibliography': '',
-                'total_citations': 0,
-                'citation_style': 'APA',
-                '_metadata': {'agent': self.name, 'error': 'json_parse_error'}
-            }
+
+        return {
+            'citations': [
+                {'source_title': source['title'], 'citation_number': number}
+                for number, source in enumerate(top_sources, 1)
+            ],
+            'bibliography': '\n'.join(f"- [{source['title']}]({source['url']})" for source in top_sources),
+            'total_citations': len(top_sources),
+            'citation_style': 'Source links',
+            '_metadata': {'agent': self.name, 'execution': 'source_records'}
+        }
