@@ -1,11 +1,40 @@
 import json
-import asyncio
 import os
 from pathlib import Path
 from typing import Dict, Any, List
 from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
+from google.adk.models.llm_response import LlmResponse
 from google import genai
-from google.genai.types import GenerateContentConfig
+from google.genai.types import Content, GenerateContentConfig, Part
+
+from agents.adk_runtime import json_object, run_workflow
+
+
+SEARCH_TYPES = ("web", "arxiv", "scholar")
+
+
+def read_search_results(state):
+    return [
+        json_object(state.get(f"{kind}_search"))
+        or {"source_type": kind, "results": [], "total_found": 0}
+        for kind in SEARCH_TYPES
+    ]
+
+
+def log_agent_start(callback_context):
+    print(f"      → {callback_context.agent_name} running...")
+
+
+def log_search_result(callback_context):
+    name = callback_context.agent_name
+    result = json_object(callback_context.state.get(name))
+    print(f"      ✓ {name}: Found {result.get('total_found', 0)} sources")
+
+
+def use_supplied_result(callback_context, llm_request):
+    result = callback_context.state.get("supplied_results", {}).get(callback_context.agent_name)
+    if result is not None:
+        return LlmResponse(content=Content(role="model", parts=[Part(text=json.dumps(result))]))
 
 
 class WebSearchAgent(LlmAgent):
@@ -39,6 +68,7 @@ Output format (JSON):
         # Initialize ADK LlmAgent 
         super().__init__(
             name="web_search",
+            output_key="web_search",
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
@@ -109,6 +139,7 @@ Output format (JSON):
         # Initialize ADK LlmAgent 
         super().__init__(
             name="arxiv_search",
+            output_key="arxiv_search",
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
@@ -181,6 +212,7 @@ Output format (JSON):
         # Initialize ADK LlmAgent
         super().__init__(
             name="scholar_search",
+            output_key="scholar_search",
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
@@ -257,6 +289,7 @@ Select the top 10-15 most relevant sources. Keep their original URLs and any sup
         # Initialize ADK LlmAgent
         super().__init__(
             name="source_aggregator",
+            output_key="aggregated_sources",
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
@@ -316,6 +349,19 @@ def create_source_gathering_workflow(model: str = "gemini-2.0-flash") -> Sequent
     scholar_search = ScholarSearchAgent(model=model)
     aggregator = SourceAggregatorAgent(model=model)
 
+    aggregation_instruction = aggregator.instruction
+
+    def provide_aggregation_instruction(context):
+        return f"{aggregation_instruction}\n\nSearch results:\n{json.dumps(read_search_results(context.state))}"
+
+    aggregator.instruction = provide_aggregation_instruction
+    aggregator.include_contents = "none"
+    for agent in (web_search, arxiv_search, scholar_search, aggregator):
+        agent.before_agent_callback = log_agent_start
+        agent.before_model_callback = use_supplied_result
+    for search in (web_search, arxiv_search, scholar_search):
+        search.after_agent_callback = log_search_result
+
     # TODO 3: Create ParallelAgent for concurrent searches
     #
     # Create a ParallelAgent that runs all three search agents concurrently.
@@ -349,11 +395,6 @@ async def execute_source_gathering(
     """
     Execute parallel source gathering workflow using ADK ParallelAgent + SequentialAgent.
 
-    EXECUTION:
-    - Manually executes workflow logic 
-    - Uses genai.Client directly for real LLM output
-    - Uses asyncio.gather for true parallelism
-
     Args:
         client: Configured genai.Client
         query: Research query
@@ -374,67 +415,40 @@ async def execute_source_gathering(
 
     # Get the sub-agents from SequentialAgent
     parallel_stage = workflow.sub_agents[0]  # ParallelAgent
-    aggregator = workflow.sub_agents[1]      # AggregatorAgent
 
     print(f"   Stage 1 (ParallelAgent): {parallel_stage.name}")
     print(f"      → Type: {type(parallel_stage).__name__}")
     print(f"      → Sub-agents: {len(parallel_stage.sub_agents)} parallel searches")
 
-    print(f"   Stage 2 (Aggregator): {aggregator.name}")
-
-    # Manually execute the workflow logic 
-    print(f"\n   Executing workflow logic (execution)...")
-
-    # STAGE 1: Execute parallel searches (fan-out)
-    print(f"\n   Stage 1: ParallelAgent (fan-out)")
-
-    web_search = parallel_stage.sub_agents[0]
-    arxiv_search = parallel_stage.sub_agents[1]
-    scholar_search = parallel_stage.sub_agents[2]
-
-    async def run_web():
-        print(f"      → {web_search.name} running...")
-        result = await web_search.search(client, query)
-        print(f"      ✓ {web_search.name}: Found {result.get('total_found', 0)} sources")
-        return result
-
-    async def run_arxiv():
-        print(f"      → {arxiv_search.name} running...")
-        result = await arxiv_search.search(client, query)
-        print(f"      ✓ {arxiv_search.name}: Found {result.get('total_found', 0)} sources")
-        return result
-
-    async def run_scholar():
-        print(f"      → {scholar_search.name} running...")
-        result = await scholar_search.search(client, query)
-        print(f"      ✓ {scholar_search.name}: Found {result.get('total_found', 0)} sources")
-        return result
-
-    source_file = os.getenv("RESEARCH_SOURCES_FILE")
-    if source_file:
-        print("      Using supplied source records")
+    initial_state = {}
+    if source_file := os.getenv("RESEARCH_SOURCES_FILE"):
+        print("   Using supplied source records")
         records = json.loads(Path(source_file).read_text(encoding="utf-8"))
-        search_results = []
-        for source_type in ("web", "arxiv", "scholar"):
-            results = [record for record in records if record["type"] == source_type]
-            search_results.append({"source_type": source_type, "results": results, "total_found": len(results)})
-    else:
-        search_results = await asyncio.gather(run_web(), run_arxiv(), run_scholar())
-
-    # STAGE 2: Aggregate results (fan-in)
-    print(f"\n   Stage 2: Aggregator (fan-in)")
-    print(f"      → {aggregator.name} aggregating results...")
-
-    if source_file:
-        unique = {source["url"]: source for source in records}
-        aggregated = {
+        supplied = {}
+        for kind in SEARCH_TYPES:
+            results = [record for record in records if record["type"] == kind]
+            supplied[f"{kind}_search"] = {"source_type": kind, "results": results, "total_found": len(results)}
+        unique = {record["url"]: record for record in records}
+        supplied["source_aggregator"] = {
             "total_sources": len(records),
             "unique_sources": len(unique),
             "top_sources": list(unique.values()),
-            "sources_by_type": {result["source_type"]: result["total_found"] for result in search_results},
+            "sources_by_type": {result["source_type"]: result["total_found"] for result in supplied.values()},
         }
-    else:
-        aggregated = aggregator.aggregate(client, list(search_results))
+        initial_state["supplied_results"] = supplied
+
+    state = await run_workflow(workflow, client, model, query, initial_state)
+    search_results = read_search_results(state)
+    aggregated = json_object(state.get("aggregated_sources"))
+    if not aggregated:
+        total = sum(result.get("total_found", 0) for result in search_results)
+        aggregated = {
+            "total_sources": total,
+            "unique_sources": total,
+            "top_sources": [],
+            "sources_by_type": dict.fromkeys(SEARCH_TYPES, 0),
+            "aggregation_summary": "Aggregation failed - JSON parse error",
+        }
 
     print(f"      ✓ Total: {aggregated.get('total_sources', 0)} sources")
     print(f"      ✓ Unique: {aggregated.get('unique_sources', 0)} sources")
@@ -449,5 +463,5 @@ async def execute_source_gathering(
         'workflow': workflow,  # Include the actual SequentialAgent object
         'parallel_agent': parallel_stage,  # Include the actual ParallelAgent object
         'pattern': 'ADK ParallelAgent + SequentialAgent',
-        'execution_mode': 'direct'
+        'execution_mode': 'adk_runner'
     }

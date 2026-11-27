@@ -43,7 +43,7 @@ async def execute_research_workflow(
     print("="*80)
     print(f"\n Research Query: {query}")
     print(f"   Pattern: SequentialAgent")
-    print(f"   Execution: (ADK agents + agent.run_async())")
+    print("   Execution: ADK Runner for source gathering and research refinement")
     print(f"   Model: {model}")
 
     # Track execution time for performance evaluation
@@ -53,7 +53,7 @@ async def execute_research_workflow(
         'query': query,
         'model': model,
         'pattern': 'SequentialAgent',
-        'execution_mode': 'direct'
+        'execution_mode': 'adk_runner'
     }
 
     # ========================================================================
@@ -174,7 +174,7 @@ async def execute_research_workflow(
     print(f"   • Citations: {citations.get('total_citations', 0)}")
     print(f"\n  Execution Method:")
     print(f"   ✓ All agents inherit from ADK base classes")
-    print(f"   ✓ Executed via agent.run_async() with genai.Client")
+    print("   ✓ Source gathering and research refinement executed via Runner.run_async()")
     print(f"   ✓ No ADK server deployment required")
     print(f"   ✓ Real LLM output from Vertex AI Gemini")
 

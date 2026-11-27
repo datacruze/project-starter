@@ -4,6 +4,35 @@ from google.adk.agents import LlmAgent, LoopAgent
 from google import genai
 from google.genai.types import GenerateContentConfig
 
+from agents.adk_runtime import json_object, run_workflow
+
+
+def record_critique(callback_context):
+    state = callback_context.state
+    draft = state.get("draft", "")
+    answer = json_object(draft) or {"answer": draft, "key_points": [], "confidence": "low"}
+    evaluation = json_object(state.get("critique"))
+    score = evaluation.get("quality_score", 0.5)
+    if type(score) not in (int, float) or not 0 <= score <= 1:
+        score = 0.5
+    should_stop = score >= 0.80
+    evaluation.update(quality_score=score, should_stop=should_stop)
+    history = state.get("iteration_history", [])
+    iteration = len(history) + 1
+    state["iteration_history"] = [*history, {
+        "iteration": iteration,
+        "answer": answer,
+        "evaluation": evaluation,
+        "should_stop": should_stop,
+    }]
+    print(f"      ✓ Iteration {iteration}: {evaluation.get('quality', 'needs_improvement')} (score: {score:.2f})")
+    if should_stop:
+        actions = getattr(callback_context, "actions", None)
+        if actions is None:
+            actions = callback_context._event_actions  # ADK 1.22 compatibility.
+        actions.escalate = True
+        print("      Quality threshold met. Critic requested ADK loop exit.")
+
 
 class ResearcherAgent(LlmAgent):
     """
@@ -40,11 +69,12 @@ Focus on accuracy, clarity, and continuous improvement. Each iteration should sh
         # Initialize ADK LlmAgent
         super().__init__(
             name="researcher",
+            output_key="draft",
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -145,11 +175,13 @@ Otherwise set should_stop=false to trigger another iteration."""
         # Initialize ADK LlmAgent
         super().__init__(
             name="critic",
+            output_key="critique",
+            after_agent_callback=record_critique,
             model=model,
             instruction=instruction,
             generate_content_config=GenerateContentConfig(
                 temperature=0.3,
-                max_output_tokens=768,
+                max_output_tokens=4096,
                 response_mime_type="application/json"
             )
         )
@@ -223,8 +255,30 @@ def create_research_loop_agent(model: str = "gemini-2.0-flash",
     researcher = ResearcherAgent(model=model)
     critic = ResearchCriticAgent(model=model)
 
-    # Compose agents into an ADK LoopAgent. max_iterations is also enforced
-    # explicitly by execute_research_loop() for direct-genai execution.
+    research_instruction = researcher.instruction
+    critic_instruction = critic.instruction
+
+    def provide_research_instruction(context):
+        state = context.state
+        return f"""{research_instruction}
+
+Question: {state['query']}
+Sources: {json.dumps(state.get('sources', {}))}
+Previous draft: {state.get('draft', '')}
+Previous critique: {state.get('critique', '')}"""
+
+    def provide_critic_instruction(context):
+        state = context.state
+        return f"""{critic_instruction}
+
+Question: {state['query']}
+Current draft: {state.get('draft', '')}
+Previous critique: {state.get('critique', '')}"""
+
+    researcher.instruction = provide_research_instruction
+    critic.instruction = provide_critic_instruction
+    researcher.include_contents = critic.include_contents = "none"
+
     refinement_loop = LoopAgent(
         name="research_refinement_loop",
         description="Iteratively generates and critiques research answers until quality is sufficient.",
@@ -265,78 +319,15 @@ async def execute_research_loop(
     print(f"   Type: {type(loop_agent).__name__}")
     print(f"   Sub-agents: {len(loop_agent.sub_agents)} (researcher + critic)")
 
-    # Get the sub-agents from the LoopAgent
-    researcher = loop_agent.sub_agents[0]
-    critic = loop_agent.sub_agents[1]
-
-    print(f"\n   🔄 Executing LoopAgent logic (execution)...")
-
-    # Manually execute the loop logic (part - can't use ADK deployment)
-    context = []
-    iteration_history = []
-    final_answer = None
-
-    # If sources are provided, add them to the initial context
-    if sources:
-        source_data = {
-            'raw_searches': sources.get('raw_searches', []),
-            'aggregated_sources': sources.get('aggregated_sources', {})
-        }
-        context.append({
-            'role': 'sources',
-            'content': json.dumps(source_data)
-        })
-
-    for iteration in range(1, max_iterations + 1):
-        print(f"\n   Iteration {iteration}/{max_iterations}")
-
-        # Researcher generates/improves answer
-        print(f"      → {researcher.name} generating answer...")
-        answer = researcher.generate(client, query, context=context if context else None)
-
-        context.append({
-            'role': 'researcher',
-            'content': json.dumps(answer)
-        })
-
-        print(f"      ✓ Answer generated (confidence: {answer.get('confidence', 'unknown')})")
-
-        # Critic evaluates quality
-        print(f"      → {critic.name} evaluating quality...")
-        evaluation = critic.evaluate(client, question=query, answer=answer)
-
-        context.append({
-            'role': 'critic',
-            'content': json.dumps(evaluation)
-        })
-
-        quality_score = evaluation.get('quality_score', 0.5)
-        should_stop = evaluation.get('should_stop', False)
-
-        print(f"      ✓ Quality: {evaluation.get('quality', 'unknown')} (score: {quality_score:.2f})")
-
-        # Record iteration
-        iteration_history.append({
-            'iteration': iteration,
-            'answer': answer,
-            'evaluation': evaluation,
-            'should_stop': should_stop
-        })
-
-        # Check termination (mimics ADK LoopAgent escalate logic)
-        if should_stop:
-            print(f"      Quality threshold met - Loop terminated")
-            final_answer = answer
-            break
-        else:
-            print(f"      Quality below threshold - Continue refining...")
-            if iteration < max_iterations:
-                print(f"      Feedback: {evaluation.get('feedback', 'No feedback')[:80]}...")
-
-    # If loop exhausted without should_stop
-    if not final_answer:
-        print(f"\n   Max iterations reached - Returning best attempt")
-        final_answer = iteration_history[-1]['answer'] if iteration_history else {}
+    sources = sources or {}
+    state = await run_workflow(loop_agent, client, model, query, {
+        "sources": {
+            "raw_searches": sources.get("raw_searches", []),
+            "aggregated_sources": sources.get("aggregated_sources", {}),
+        },
+    })
+    iteration_history = state.get("iteration_history", [])
+    final_answer = iteration_history[-1]["answer"] if iteration_history else {}
 
     print(f"   LoopAgent execution completed ({len(iteration_history)} iterations)")
 
@@ -347,5 +338,5 @@ async def execute_research_loop(
         'iteration_history': iteration_history,
         'loop_agent': loop_agent,  # Include the actual LoopAgent object
         'pattern': 'ADK LoopAgent',
-        'execution_mode': 'direct'
+        'execution_mode': 'adk_runner'
     }

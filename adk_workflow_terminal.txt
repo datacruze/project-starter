@@ -1,0 +1,109 @@
+Live python3 main.py run — console excerpt
+
+ Research Query: What are the latest advances in quantum computing error correction?
+   Pattern: SequentialAgent
+   Execution: ADK Runner for source gathering and research refinement
+   Model: gemini-3-flash-preview
+
+--------------------------------------------------------------------------------
+STAGE 1: Domain Classification
+--------------------------------------------------------------------------------
+   ✓ Domain: computer_science
+   ✓ Confidence: 0.98
+   ✓ Complexity: high
+   ✓ Recommended sources: arxiv, scholar, web
+
+--------------------------------------------------------------------------------
+STAGE 2: Source Gathering
+--------------------------------------------------------------------------------
+
+ Source Gathering: What are the latest advances in quantum computing error corr...
+   Pattern: ADK ParallelAgent + SequentialAgent
+   Created SequentialAgent: source_gathering_workflow
+   Type: SequentialAgent
+   Sub-agents: 2
+   Stage 1 (ParallelAgent): parallel_source_searches
+      → Type: ParallelAgent
+      → Sub-agents: 3 parallel searches
+   ADK Runner executing source_gathering_workflow
+      → web_search running...
+      → arxiv_search running...
+      → scholar_search running...
+      ✓ web_search: Found 7 sources
+      ✓ scholar_search: Found 6 sources
+      ✓ arxiv_search: Found 6 sources
+      → source_aggregator running...
+      ✓ Total: 19 sources
+      ✓ Unique: 18 sources
+      ✓ Top sources: 15
+   ✅ Workflow execution completed
+
+--------------------------------------------------------------------------------
+STAGE 3: Research Refinement
+--------------------------------------------------------------------------------
+
+ Research Loop: What are the latest advances in quantum computing error corr...
+   Max Iterations: 3
+   Created LoopAgent: research_refinement_loop
+   Type: LoopAgent
+   Sub-agents: 2 (researcher + critic)
+   ADK Runner executing research_refinement_loop
+      ✓ Iteration 1: excellent (score: 0.95)
+      Quality threshold met. Critic requested ADK loop exit.
+   LoopAgent execution completed (1 iterations)
+
+--------------------------------------------------------------------------------
+STAGE 4: Fact Checking (LlmAgent)
+--------------------------------------------------------------------------------
+   ✓ Credibility Score: 0.50
+   ✓ Verified Claims: 0
+   ✓ Questionable Claims: 0
+
+--------------------------------------------------------------------------------
+STAGE 5: Synthesis (LlmAgent)
+--------------------------------------------------------------------------------
+   ✓ Synthesis completed
+   ✓ Key Insights: 3
+   ✓ Themes: 3
+   ✓ Coherence Score: 0.95
+
+--------------------------------------------------------------------------------
+STAGE 6: Citation Generation (LlmAgent)
+--------------------------------------------------------------------------------
+   ✓ Citations formatted
+   ✓ Total Citations: 10
+   ✓ Style: APA
+
+================================================================================
+WORKFLOW COMPLETED
+================================================================================
+
+. All 7 stages executed successfully
+
+. Results Summary:
+   • Query: What are the latest advances in quantum computing error correction?
+   • Domain: computer_science
+   • Sources Found: 19
+   • Research Iterations: 1
+   • Credibility Score: 0.50
+   • Citations: 10
+
+  Execution Method:
+   ✓ All agents inherit from ADK base classes
+   ✓ Source gathering and research refinement executed via Runner.run_async()
+   ✓ No ADK server deployment required
+   ✓ Real LLM output from Vertex AI Gemini
+
+--------------------------------------------------------------------------------
+STAGE 7: Performance Evaluation
+--------------------------------------------------------------------------------
+   ✓ Execution Time: 86.23s
+   ✓ Performance Score: 0.95
+   ✓ Health Status: excellent
+   ✓ Queries Processed: 1
+   ⚠️  Bottlenecks Identified:
+      • Slow response times - optimize source gathering
+
+[Report preview and metrics omitted]
+
+Execution successful!
